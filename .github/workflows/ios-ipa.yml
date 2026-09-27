@@ -1,0 +1,269 @@
+name: iOS IPA
+
+# An unsigned `.ipa`, built so that it can be sideloaded.
+#
+# Why this file exists beside `release.yml`, which already builds one: that workflow is triggered by
+# a `v*` tag and does five other things — it signs an APK, writes the update manifests on the
+# `updates` branch, edits release notes and notifies a Telegram channel. Four of those need secrets
+# and a repository the run may write to. This one does nothing but produce the `.ipa` and hand it
+# back as a build artifact, which is the whole of what sideloading needs and the only shape of it
+# that works on a fork.
+#
+# **No secret is read anywhere below.** Not a signing identity, not a keystore, not a GitHub token
+# beyond the one Actions issues to every run. An unsigned build removes the need for all of them:
+# there is nothing to authenticate with and nothing to publish to, so the artifact is the product.
+#
+# `CODE_SIGNING_ALLOWED=NO` and its two siblings are what make this an *unsigned* build rather than a
+# failed one. The Xcode project is set to automatic signing; on a runner with no account and no
+# provisioning profile that has nothing to resolve, so every phase — including the Kotlin framework
+# `:iosapp` links in — is told to skip signing instead of looking for something that is not there.
+# The result installs through AltStore, Sideloadly or Xcode once re-signed with your own Apple ID,
+# which is the only way an `.ipa` that is not from the App Store installs at all.
+on:
+  # The way to ask for a build. Nothing is automatic, so nothing spends a macOS runner by accident.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or SHA to build. Empty means the branch this was dispatched from.'
+        required: false
+        type: string
+      version_name:
+        description: 'CFBundleShortVersionString, e.g. 1.3.0 or 1.3.0-dev.1. Empty means gradle.properties.'
+        required: false
+        type: string
+      run_tests:
+        description: 'Also run the Kotlin/Native test suite first. Slower; off by default.'
+        required: false
+        type: boolean
+        default: false
+  # `main` itself is a trigger, so the ordinary way to get an `.ipa` is to push — no clicking, no
+  # remembering a workflow name. A macOS runner is free for a public repository, this fork included.
+  #
+  # A tag also carries the version, so a tag push needs nothing typed. The suffix is kept verbatim:
+  # Apple's three-dotted-integers rule is an App Store submission rule, this build never goes to the
+  # App Store, and a tester who cannot tell which build is on their phone is the worse outcome.
+  push:
+    branches: [main]
+    tags: ['v*']
+
+# Two builds of the same ref at once would race on nothing — the artifact is per-run — but they would
+# spend two macOS runners to produce the same file. One at a time, and a queued push is superseded
+# rather than run, except for tags, where each one is a distinct deliverable.
+concurrency:
+  group: ipa-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+permissions:
+  # The artifact, and nothing else. No `contents: write`: this workflow never publishes a release.
+  contents: read
+
+jobs:
+  ipa:
+    # `macos-latest` is an arm64 runner, which is what the framework targets need: `:iosapp` declares
+    # `iosArm64` and `iosSimulatorArm64` and no `iosX64`, so an Intel runner could not host the build
+    # it is asked for. GitHub's macOS runners are free for public repositories, forks included.
+    runs-on: macos-latest
+    # The first run is the expensive one: every module compiles from scratch for `iosArm64`. Upstream
+    # measured 43m43s for the equivalent step on a cold cache and 3-core runner; the caches below are
+    # what brings the second run down. 90 minutes is upstream's own ceiling for the same work.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          # `:shared`'s version reader and the 关于 screen want history; and a shallow clone of a fork
+          # of a repository this size saves less than the surprises it causes.
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      # Not decoration on an iOS build. `:iosapp` depends on `:ui` → `:designsys` → `:shared`, and
+      # every one of them is a KMP module that also declares an Android target — so the Android
+      # Gradle plugin is applied and *configuring* the build fails outright without an SDK to point
+      # at. Linux runners have one preinstalled; macOS images do not.
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@v4
+
+      # The Kotlin/Native compiler and its toolchain live outside `GRADLE_USER_HOME`, so the Gradle
+      # cache below does not cover them and they were re-downloaded — over a gigabyte — on every run
+      # before this step existed. Keyed on the version catalogue because that is where the Kotlin
+      # version is declared: bump Kotlin and the key changes, which is exactly when a different
+      # compiler has to be fetched.
+      - name: Cache the Kotlin/Native toolchain
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      # `cache-read-only: false` because this job is the only thing in the repository that builds on
+      # macOS, so the entry it writes has exactly one reader — its own next run. There is no Android
+      # or Linux job that could be poisoned by it: `setup-gradle` puts the runner's OS in the key.
+      # Without this the 40-odd minute cold build is the *every* build.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: false
+
+      # The Native half of the common test suite, and **off unless asked for**. It is the only place
+      # these sources run on a Kotlin/Native target — every Linux job compiles them for the host JVM
+      # instead — but it is not what this workflow is for, and it is not free: it links a second
+      # Kotlin/Native binary before the app build has started.
+      #
+      # What it is *not* here to do is gate the `.ipa`. The Linux CI already runs the same suite on
+      # the JVM, `:shared`'s Apple target cannot build on Linux anyway, and a broken test does not
+      # make an unsigned sideload build less usable — it makes it less trustworthy, which is a thing
+      # the person installing it decides with the `run_tests` switch rather than one this workflow
+      # decides for them.
+      - name: Run the common tests on Kotlin/Native
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_tests }}
+        run: ./gradlew :shared:macosArm64Test --console=plain
+
+      - name: Resolve the version
+        id: version
+        run: |
+          # `gradle.properties` is the one place this app's version is declared, and Xcode cannot read
+          # it — which is why the answer is passed to `xcodebuild` on the command line rather than
+          # kept in a second copy inside `project.pbxproj`. A dispatch input overrides it, so a build
+          # can be labelled without editing a file and pushing a tag for it.
+          declared_name=$(sed -n 's/^nodyssey\.versionName=//p' gradle.properties | head -1)
+          declared_code=$(sed -n 's/^nodyssey\.versionCode=//p' gradle.properties | head -1)
+          version_name="${{ github.event.inputs.version_name }}"
+          [ -n "$version_name" ] || version_name="$declared_name"
+          # A tag carries the version it was cut as, so the two are compared rather than one silently
+          # winning. On `workflow_dispatch` there is nothing to compare against and the input stands.
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [ "$declared_name" != "$tag_version" ]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} wants versionName $tag_version, but gradle.properties declares $declared_name." >&2
+              exit 1
+            fi
+          fi
+          [ -n "$declared_code" ] || { echo "::error::gradle.properties declares no nodyssey.versionCode." >&2; exit 1; }
+          {
+            echo "name=$version_name"
+            echo "code=$declared_code"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building $version_name ($declared_code)"
+
+      - name: Build the unsigned app
+        env:
+          # Raises the Gradle daemon's heap for this step only, and it is not a precaution: at the
+          # project's own `-Xmx4096m` the release link of the iOS framework dies with
+          #
+          #   error: Compilation failed: Java heap space
+          #     at ...optimizations.StaticInitializersOptimization$InterproceduralAnalysis.analyze
+          #
+          # — Kotlin/Native's whole-program optimization pass, which only runs for a *release*
+          # binary. The Kotlin/Native compiler runs inside the Gradle daemon rather than a process of
+          # its own, so this is the knob and `kotlin.native.jvmArgs` is not. `GRADLE_OPTS` rather than
+          # a `gradle.properties` edit because the invocation that has to see it is the one inside the
+          # Xcode project's "Build Kotlin framework" run script, which takes no arguments from here.
+          #
+          # 5g, not more: the runner has 7 GB in total and xcodebuild wants its share. If a future
+          # compiler needs more than fits, the fallback is a `macos-15-intel` runner — 14 GB, but it
+          # cannot host this build without an `iosX64` target, so that trade needs the target added
+          # first. See `iosapp/build.gradle.kts`.
+          #
+          # **If this step ever dies with `Compilation failed: Java heap space`, the first thing to
+          # suspect is 2.50 MB of download size.** Upstream measured "4g fails, 5g succeeds" with
+          # `smallBinary` on, and this build no longer sets it — so the reach of every one of these
+          # passes is wider than the number 5g was chosen against. There is no more headroom to give
+          # on a 7 GB runner, so the answer is one of:
+          #
+          #   1. put `binaryOption("smallBinary", "true")` back in `iosapp/build.gradle.kts` — one
+          #      line, and it is the exact configuration 5g was measured against;
+          #   2. move this job to a `macos-15-intel` runner (14 GB), after adding an `iosX64()`
+          #      target so an Intel host can build what it is asked for;
+          #   3. `-Xmx5500m`, which is a coin flip against xcodebuild's own appetite.
+          #
+          # Option 1 is the honest one only if the jank it causes is acceptable, and it is not
+          # measured either way — see the note this replaced in `iosapp/build.gradle.kts`. Option 2 is
+          # the real fix: it buys memory instead of trading back the thing this build is for.
+          GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx5g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8"
+        run: |
+          xcodebuild \
+            -project iosapp/Nodyssey.xcodeproj \
+            -scheme Nodyssey \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Nodyssey.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="${{ steps.version.outputs.name }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.code }}"
+
+      # An `.ipa` is a zip with the `.app` under `Payload/` and nothing else required.
+      # `xcodebuild -exportArchive` is the usual way to make one and cannot be used here: export *is*
+      # a signing step, and it refuses an archive that has no signature to re-sign. Building the zip
+      # by hand is the supported path for exactly this case.
+      #
+      # `-y` keeps symlinks as symlinks. Nothing in this bundle is a framework today — the Kotlin
+      # framework is static and links in — but the flag is what stops a future embedded one from
+      # being flattened into an invalid bundle.
+      - name: Pack the .ipa
+        id: ipa
+        run: |
+          name="nodyssey-${{ steps.version.outputs.name }}-unsigned.ipa"
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$RUNNER_TEMP/Nodyssey.xcarchive/Products/Applications/Nodyssey.app" "$RUNNER_TEMP/Payload/"
+          (cd "$RUNNER_TEMP" && zip -qry "$name" Payload)
+          echo "path=$RUNNER_TEMP/$name" >> "$GITHUB_OUTPUT"
+          ls -lh "$RUNNER_TEMP/$name"
+
+      # Proof that it really is unsigned, in the job log rather than in a claim about it. A build
+      # that quietly acquired a signature would be *harder* to sideload, not easier: a signature this
+      # runner cannot make is one no device will trust, and re-signing needs the bundle to be the
+      # thing the file says it is.
+      - name: Confirm the build is unsigned
+        run: |
+          app="$RUNNER_TEMP/Nodyssey.xcarchive/Products/Applications/Nodyssey.app"
+          echo "=== codesign ==="
+          codesign -dv "$app" 2>&1 || true
+          if codesign -dv "$app" 2>/dev/null | grep -q 'Authority='; then
+            echo "::warning::The app carries a signature; it was expected to have none." >&2
+          fi
+          echo "=== Info.plist ==="
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist"
+
+      # The deliverable. Downloadable from the run's page once you are signed in to GitHub — which is
+      # the fork's own owner, so there is nothing to share and nothing to leak.
+      - name: Upload the .ipa
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodyssey-${{ steps.version.outputs.name }}-unsigned-ipa
+          path: ${{ steps.ipa.outputs.path }}
+          # An unsigned `.ipa` is a bag of someone else's compiled code; keeping it for as long as
+          # GitHub allows costs nothing and a build from last month is still installable.
+          retention-days: 90
+          if-no-files-found: error
+
+      # Size and digest in the run's summary, so the number can be compared with the previous build
+      # without downloading either one. `smallBinary` in `iosapp/build.gradle.kts` is a size-for-speed
+      # trade, and this line is how a change to it is seen.
+      - name: Summarise
+        run: |
+          path="${{ steps.ipa.outputs.path }}"
+          {
+            echo "### Unsigned iOS build"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Version | \`${{ steps.version.outputs.name }}\` (\`${{ steps.version.outputs.code }}\`) |"
+            echo "| Ref | \`${{ github.event.inputs.ref || github.ref }}\` |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Size | $(du -h "$path" | cut -f1) |"
+            echo "| SHA-256 | \`$(shasum -a 256 "$path" | cut -d' ' -f1)\` |"
+            echo
+            echo "Unsigned, so it installs through AltStore, Sideloadly or Xcode with your own Apple ID."
+          } >> "$GITHUB_STEP_SUMMARY"

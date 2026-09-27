@@ -459,6 +459,12 @@
     <string name="settings_report_format">测评报告</string>
     <string name="settings_report_format_adapted">适配格式</string>
     <string name="settings_report_format_source">显示原文</string>
+    <!-- 设置「返回手势」：只在 iOS 显示这一行，因为安卓的返回手势归系统管，App 改不了 -->
+    <string name="settings_back_swipe">返回手势</string>
+    <string name="settings_back_swipe_hint">从屏幕边缘滑回上一页</string>
+    <string name="settings_back_swipe_hint_restart">从屏幕边缘滑回上一页，重新打开 App 后生效</string>
+    <string name="settings_back_swipe_start">仅左侧</string>
+    <string name="settings_back_swipe_both">左右两侧</string>
     <string name="settings_home_page_bar">首页翻页栏</string>
     <string name="settings_home_page_bar_hint">在首页右下角显示页码</string>
     <string name="settings_wifi_images">仅 Wi-Fi 下加载图片</string>

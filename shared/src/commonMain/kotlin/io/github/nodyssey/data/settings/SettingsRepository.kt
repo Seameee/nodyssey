@@ -85,6 +85,9 @@ class SettingsRepository(
                     ?.let { runCatching { FeedSort.valueOf(it) }.getOrNull() }
                     ?: FeedSort.LAST_REPLY,
                 homePageBar = preferences[KEY_HOME_PAGE_BAR] ?: true,
+                backSwipeEdge = preferences[KEY_BACK_SWIPE_EDGE]
+                    ?.let { runCatching { BackSwipeEdge.valueOf(it) }.getOrNull() }
+                    ?: BackSwipeEdge.START,
                 holidayTheme = preferences[KEY_HOLIDAY_THEME] ?: false,
                 searchHistory = decodeSearchHistory(preferences),
                 recentBoards = decodeValues(preferences[KEY_RECENT_BOARDS]),
@@ -248,6 +251,9 @@ class SettingsRepository(
 
     /** 首页翻页栏; see [UserSettings.homePageBar] for what it adds. */
     suspend fun setHomePageBar(enabled: Boolean) = edit { it[KEY_HOME_PAGE_BAR] = enabled }
+
+    /** 返回手势; see [UserSettings.backSwipeEdge] for what it changes and when it takes effect. */
+    suspend fun setBackSwipeEdge(edge: BackSwipeEdge) = edit { it[KEY_BACK_SWIPE_EDGE] = edge.name }
 
     /**
      * 新手引导 — written true when the guide is finished or skipped, and false by 再看一次引导 on
@@ -625,6 +631,7 @@ class SettingsRepository(
         private val KEY_MESSAGE_TOOLBAR = stringPreferencesKey("message_toolbar_actions")
         private val KEY_FEED_SORT = stringPreferencesKey("feed_sort")
         private val KEY_HOME_PAGE_BAR = booleanPreferencesKey("home_page_bar")
+        private val KEY_BACK_SWIPE_EDGE = stringPreferencesKey("back_swipe_edge")
         private val KEY_ONBOARDING_SEEN = booleanPreferencesKey("onboarding_seen")
         private val KEY_HOLIDAY_THEME = booleanPreferencesKey("holiday_theme")
         private val KEY_NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
@@ -804,6 +811,23 @@ data class UserSettings(
      * only adds a way to arrive somewhere, which is the same pairing the comment thread uses.
      */
     val homePageBar: Boolean = true,
+    /**
+     * 返回手势 — which screen edges an edge-swipe starts a back navigation from.
+     *
+     * iOS only, and the one setting here whose Android half does nothing: Android's back gesture is
+     * the system's (`OnBackInvokedCallback`), it is drawn by the launcher, and no app can add a second
+     * edge to it. So the row that writes this is hidden on Android — see `rememberBackSwipeGestureAvailable`
+     * in `:ui`, which is the platform question the row is gated on rather than a branch in a screen.
+     *
+     * [BackSwipeEdge.START] is the default because it is what every iOS app does and what the
+     * platform's own `UINavigationController` does.
+     *
+     * **Read once, at shell construction.** The gesture recognizers behind this are installed by
+     * Compose Multiplatform's own `ComposeUIViewController`, which reads it while the controller is
+     * built and cannot be told again afterwards — the same shape, and the same cost, as 语言 on this
+     * platform. The settings row says so rather than appearing to do nothing.
+     */
+    val backSwipeEdge: BackSwipeEdge = BackSwipeEdge.START,
     /** Local mirror of the account's Remote 启用节日主题 switch. */
     val holidayTheme: Boolean = false,
     val searchHistory: List<SearchHistoryEntry> = emptyList(),
@@ -937,6 +961,27 @@ data class SavedTheme(
  * rather than tapping through to the original on every report.
  */
 enum class ReportFormat { ADAPTED, SOURCE }
+
+/**
+ * 返回手势 — which edges of the screen an edge-swipe navigates back from.
+ *
+ * Two values rather than a switch per edge, because the pair is a choice rather than two independent
+ * switches: an app that answered back on neither edge would have no gesture at all, and one that
+ * answered on both is [BOTH]. The platform's own start edge is not something an app can refuse —
+ * `UINavigationController`'s interactive pop is the same gesture — so there is no "neither" to offer.
+ *
+ * The names are the ones on disk. Renaming a constant without a migration would land every existing
+ * device back on [START], which is why they say which edge rather than which direction: what is the
+ * left edge in a left-to-right language is the right edge in a right-to-left one, and only the
+ * platform knows which of the two it is drawing — `:iosapp` is where this becomes an edge.
+ */
+enum class BackSwipeEdge {
+    /** The platform's own back edge, which is the left edge under LTR and the right under RTL. */
+    START,
+
+    /** Both edges return: [START] plus the far one, which the platform leaves disabled by default. */
+    BOTH,
+}
 
 /**
  * The stored field stays a list even though the domain now holds one board.

@@ -18,6 +18,7 @@ import io.github.nodyssey.data.proxy.ProxyType
 import io.github.nodyssey.data.proxy.routes
 import io.github.nodyssey.data.session.SessionRepository
 import io.github.nodyssey.data.settings.AppLanguage
+import io.github.nodyssey.data.settings.BackSwipeEdge
 import io.github.nodyssey.data.settings.ReportFormat
 import io.github.nodyssey.data.settings.SettingsRepository
 import io.github.nodyssey.data.settings.ThemeMode
@@ -159,6 +160,18 @@ class SettingsViewModel(
 
     fun setHomePageBar(value: Boolean) {
         viewModelScope.launch { settings.setHomePageBar(value) }
+    }
+
+    /**
+     * 返回手势 — written like any other setting, and read at the next launch by `:iosapp`.
+     *
+     * Nothing here re-creates the controller or otherwise chases the change: the recognizers behind
+     * it are installed once, when Compose Multiplatform's `ComposeUIViewController` is constructed,
+     * and the settings row says so. Rebuilding the controller to apply it would put the reader back
+     * on the feed. See `backSwipeGestureAppliesOnRestart`.
+     */
+    fun setBackSwipeEdge(value: BackSwipeEdge) {
+        viewModelScope.launch { settings.setBackSwipeEdge(value) }
     }
 
     fun setUpdateCheckOnLaunch(value: Boolean) {

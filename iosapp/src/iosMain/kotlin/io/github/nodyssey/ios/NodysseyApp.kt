@@ -1,11 +1,14 @@
 package io.github.nodyssey.ios
 
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.uikit.EndEdgePanGestureBehavior
 import androidx.compose.ui.window.ComposeUIViewController
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import io.github.nodyssey.NodysseyRoot
 import io.github.nodyssey.core.NodeSeekSite
+import io.github.nodyssey.data.settings.BackSwipeEdge
 import io.github.nodyssey.ui.navigation.TopLevelDestination
 import io.github.nodyssey.ui.settings.IosActiveSite
 import io.github.plaza.core.net.resolveWebKitUserAgent
@@ -130,6 +133,10 @@ object NodysseyApp {
         return graph
     }
 
+    // `endEdgePanGestureBehavior` is `@ExperimentalComposeUiApi`: CMP still reserves the right to
+    // reshape how the far edge is configured. Opted in here rather than at the file level, because
+    // this is the one function that needs it.
+    @OptIn(ExperimentalComposeUiApi::class)
     private suspend fun buildController(): UIViewController {
         val graph = ensureContainer()
         // Before the composition rather than inside it: the store is read asynchronously, and a
@@ -139,7 +146,20 @@ object NodysseyApp {
         // screen is up, so awaiting the answer costs nothing on screen and blocks nothing.
         val storedSettings = graph.settingsRepository.settings.first()
         val controller =
-            ComposeUIViewController {
+            ComposeUIViewController(
+                // 返回手势, and the only place it can be said. `IosComposeSceneLayer` reads this once,
+                // in its initialiser, and installs both edge recognizers from it; there is no setter
+                // and no second reading, which is why the settings row promises the next launch. The
+                // builder's `configure` lambda runs before the scene layer exists, so this is the last
+                // moment the answer can be given at all.
+                configure = {
+                    endEdgePanGestureBehavior =
+                        when (storedSettings.backSwipeEdge) {
+                            BackSwipeEdge.START -> EndEdgePanGestureBehavior.Disabled
+                            BackSwipeEdge.BOTH -> EndEdgePanGestureBehavior.Back
+                        }
+                },
+            ) {
                 NodysseyRoot(
                     container = graph,
                     initialSettings = storedSettings,

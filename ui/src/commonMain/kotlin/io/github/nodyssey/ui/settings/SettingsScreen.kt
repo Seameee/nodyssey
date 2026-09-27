@@ -37,6 +37,7 @@ import io.github.nodyssey.core.NodeSeekSite
 import io.github.nodyssey.data.dns.DohServer
 import io.github.nodyssey.data.proxy.ProxyType
 import io.github.nodyssey.data.settings.AppLanguage
+import io.github.nodyssey.data.settings.BackSwipeEdge
 import io.github.nodyssey.data.settings.ReportFormat
 import io.github.nodyssey.data.settings.SettingsRepository
 import io.github.nodyssey.data.settings.ThemeMode
@@ -61,6 +62,11 @@ import io.github.nodyssey.ui.resources.settings_app_links
 import io.github.nodyssey.ui.resources.settings_app_links_summary_off
 import io.github.nodyssey.ui.resources.settings_app_links_summary_on
 import io.github.nodyssey.ui.resources.settings_appearance
+import io.github.nodyssey.ui.resources.settings_back_swipe
+import io.github.nodyssey.ui.resources.settings_back_swipe_both
+import io.github.nodyssey.ui.resources.settings_back_swipe_hint
+import io.github.nodyssey.ui.resources.settings_back_swipe_hint_restart
+import io.github.nodyssey.ui.resources.settings_back_swipe_start
 import io.github.nodyssey.ui.resources.settings_body_size
 import io.github.nodyssey.ui.resources.settings_clear_cache
 import io.github.nodyssey.ui.resources.settings_clear_cache_size
@@ -149,10 +155,15 @@ fun SettingsRoute(
     // this app's, and it changes while the user is away on a screen we do not own.
     val appLinkHandlingEnabled = rememberAppLinkHandlingEnabled()
     val openAppLinkSettings = rememberAppLinkSettingsLauncher()
+    // The same kind of question as the one above: whether the platform has an edge gesture this app
+    // may configure, which is an iOS-only answer today.
+    val backSwipeAvailable = rememberBackSwipeGestureAvailable()
     SettingsScreen(
         state = state,
         appLinkHandlingEnabled = appLinkHandlingEnabled,
         onOpenAppLinkSettings = openAppLinkSettings,
+        backSwipeAvailable = backSwipeAvailable,
+        onBackSwipeEdgeChange = viewModel::setBackSwipeEdge,
         onBack = onBack,
         onOpenTheme = onOpenTheme,
         onThemeModeChange = viewModel::setThemeMode,
@@ -199,6 +210,9 @@ fun SettingsScreen(
     onUpdateDevChannelChange: (Boolean) -> Unit,
     onClearCache: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Null where the platform has no edge gesture to configure — see [rememberBackSwipeGestureAvailable]. */
+    backSwipeAvailable: Boolean? = null,
+    onBackSwipeEdgeChange: (BackSwipeEdge) -> Unit = {},
     onOpenNotifications: () -> Unit = {},
     onOpenProxy: () -> Unit = {},
     onOpenDoh: () -> Unit = {},
@@ -304,6 +318,26 @@ fun SettingsScreen(
                     onCheckedChange = onOneHandModeChange,
                     trailing = { GroupedListItemSwitch(checked = state.settings.oneHandMode) },
                 )
+                // iOS only, and hidden rather than explained elsewhere: Android's back gesture is the
+                // system's and no app may configure it. See `rememberBackSwipeGestureAvailable`.
+                if (backSwipeAvailable == true) {
+                    SettingsBlock(
+                        title = stringResource(Res.string.settings_back_swipe),
+                        subtitle =
+                        stringResource(
+                            if (backSwipeGestureAppliesOnRestart) {
+                                Res.string.settings_back_swipe_hint_restart
+                            } else {
+                                Res.string.settings_back_swipe_hint
+                            },
+                        ),
+                    ) {
+                        ConnectedBackSwipeButtons(
+                            selected = state.settings.backSwipeEdge,
+                            onSelected = onBackSwipeEdgeChange,
+                        )
+                    }
+                }
                 SettingsBlock(
                     title = stringResource(Res.string.settings_body_size),
                     value = bodyFontSize.roundToInt().toString(),
@@ -696,6 +730,27 @@ private fun ConnectedReportFormatButtons(
         listOf(
             ReportFormat.ADAPTED to stringResource(Res.string.settings_report_format_adapted),
             ReportFormat.SOURCE to stringResource(Res.string.settings_report_format_source),
+        )
+    ChoiceSegments(
+        labels = choices.map { it.second },
+        selectedIndex = choices.indexOfFirst { it.first == selected },
+        onSelect = { onSelected(choices[it].first) },
+    )
+}
+
+/**
+ * 返回手势 — two segments rather than a switch per edge, because a reader who wants the far edge
+ * wants it *as well as* the near one, and the near one is not theirs to refuse. See [BackSwipeEdge].
+ */
+@Composable
+private fun ConnectedBackSwipeButtons(
+    selected: BackSwipeEdge,
+    onSelected: (BackSwipeEdge) -> Unit,
+) {
+    val choices =
+        listOf(
+            BackSwipeEdge.START to stringResource(Res.string.settings_back_swipe_start),
+            BackSwipeEdge.BOTH to stringResource(Res.string.settings_back_swipe_both),
         )
     ChoiceSegments(
         labels = choices.map { it.second },

@@ -19,6 +19,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.navigationevent.DirectNavigationEventInput
 import androidx.navigationevent.NavigationEvent
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * 返回手势 — a horizontal swipe in the lower half of the screen that navigates back.
@@ -128,32 +129,63 @@ private suspend fun AwaitPointerEventScope.driveSwipeBack(
     val tracker = VelocityTracker()
     var furthest = 0f
     val completed =
-        horizontalDrag(swipe.id) { change ->
-            tracker.addPosition(change.uptimeMillis, change.position)
-            furthest = distanceTravelled(swipe, change.position.x)
-            input.backProgressed(
-                NavigationEvent(
-                    swipeEdge = edge,
-                    progress = (furthest / width).coerceIn(0f, 1f),
-                    touchX = change.position.x,
-                    touchY = change.position.y,
-                    frameTimeMillis = change.uptimeMillis,
-                ),
-            )
-            change.consume()
+        try {
+            horizontalDrag(swipe.id) { change ->
+                tracker.addPosition(change.uptimeMillis, change.position)
+                furthest = distanceTravelled(swipe, change.position.x)
+                input.backProgressed(
+                    NavigationEvent(
+                        swipeEdge = edge,
+                        progress = (furthest / width).coerceIn(0f, 1f),
+                        touchX = change.position.x,
+                        touchY = change.position.y,
+                        frameTimeMillis = change.uptimeMillis,
+                    ),
+                )
+                change.consume()
+            }
+        } catch (cancellation: CancellationException) {
+            // The gesture was taken away mid-drag rather than ended — the node left the composition,
+            // or a parent claimed the pointer. Nav3 is already seeking a predictive transition and
+            // would otherwise never hear how it ended, leaving the page parked part way across. So
+            // say it ended, then let the cancellation continue on its way.
+            input.backCancelled()
+            throw cancellation
         }
 
-    // Commit or retreat. Distance leads because it is what the user can see — the page is already
-    // part way across — and velocity only settles the fast flick that stops short, the way the
-    // platform's own gesture decides it.
+    // Commit or retreat — see [swipeBackCommits] for the two thresholds and why they are these.
     val speed = tracker.calculateVelocity().x.let { if (swipe.toTheLeft) -it else it }
-    val pastCommitPoint = furthest > width * SWIPE_BACK_COMMIT_FRACTION
-    if (completed && (pastCommitPoint || speed > SWIPE_BACK_COMMIT_VELOCITY)) {
+    if (completed && swipeBackCommits(travelledFraction = furthest / width, velocity = speed)) {
         input.backCompleted()
     } else {
         input.backCancelled()
     }
 }
+
+/**
+ * Whether letting go navigates back, from how far the drag got as a fraction of the width and the
+ * finger's speed in px/s along the way it was going.
+ *
+ * Distance leads because it is what the reader can see — the page is already part way across, and the
+ * fraction is the share of the screen it has visibly left. Velocity only settles the flick that stops
+ * short, which is a gesture made fast enough that the *speed* was the intent rather than the
+ * distance.
+ *
+ * Both numbers are the ones a reader would say out loud, and both were wrong in the first version of
+ * this:
+ *
+ * - **Half the screen, not a third.** Committing at 30% meant a drag the reader would call "about
+ *   halfway" — or less — already counted as decided, and the page left when they expected it to come
+ *   back.
+ * - **A flick, not "still moving".** The platform's own gesture uses 100 px/s, and copying the number
+ *   without its logic was the mistake: 100 px/s is not a flick, it is the speed of a finger that has
+ *   not stopped yet, so nearly every release cleared it and the velocity check committed drags the
+ *   distance check was meant to reject. A deliberate flick across a phone is several times this.
+ */
+internal fun swipeBackCommits(
+    travelledFraction: Float,
+    velocity: Float,
+): Boolean = travelledFraction > SWIPE_BACK_COMMIT_FRACTION || velocity > SWIPE_BACK_COMMIT_VELOCITY
 
 /** How far the finger has come in the direction the swipe is going, from where it went down. */
 private fun distanceTravelled(swipe: SwipeBack, x: Float): Float =
@@ -162,11 +194,21 @@ private fun distanceTravelled(swipe: SwipeBack, x: Float): Float =
 /** The share of the screen's height, measured from the bottom, in which the swipe works. */
 private const val SWIPE_BACK_ZONE_FRACTION = 0.5f
 
-/** Fraction of the width a drag must reach to navigate back on release. */
-private const val SWIPE_BACK_COMMIT_FRACTION = 0.3f
+/**
+ * Fraction of the width the drag must pass to navigate back on distance alone — the middle of the
+ * screen, which is the point a reader judges "far enough" by. Releasing short of it springs back.
+ */
+private const val SWIPE_BACK_COMMIT_FRACTION = 0.5f
 
-/** px/s the drag must reach to commit early, matching the platform's own flick threshold. */
-private const val SWIPE_BACK_COMMIT_VELOCITY = 100f
+/**
+ * px/s the finger must be moving to navigate back on speed alone.
+ *
+ * Well above the platform's own 100, which is the speed of a finger that is merely still moving: at
+ * that threshold a slow drag released anywhere committed the back, whatever the distance. A phone
+ * flicked deliberately travels several screen-widths a second, so this separates the two without
+ * asking a flick to be violent. See [swipeBackCommits].
+ */
+private const val SWIPE_BACK_COMMIT_VELOCITY = 1_000f
 
 /** Which horizontal swipes navigate back. */
 enum class SwipeBackDirection(

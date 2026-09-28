@@ -115,10 +115,6 @@ import io.github.nodyssey.ui.common.SiteErrorSnackbar
 import io.github.nodyssey.ui.common.SiteErrorState
 import io.github.nodyssey.ui.common.describedAsLoading
 import io.github.nodyssey.ui.common.rememberShareText
-import io.github.nodyssey.ui.common.sharedThreadAuthor
-import io.github.nodyssey.ui.common.sharedThreadAvatar
-import io.github.nodyssey.ui.common.sharedThreadBoard
-import io.github.nodyssey.ui.common.sharedThreadTitle
 import io.github.nodyssey.ui.composer.FloorReference
 import io.github.nodyssey.ui.composer.ReplyComposerHost
 import io.github.nodyssey.ui.composer.ReplyComposerViewModel
@@ -543,8 +539,7 @@ fun PostDetailScreen(
      * nothing has arrived yet. A thread still loading has no body either, and this used to offer the
      * button to it; nobody saw that until the loading state started drawing the real header, at
      * which point the button appeared for the length of the fetch and then vanished, dropping
-     * everything under it — including an avatar still settling out of its flight — by its own
-     * height.
+     * everything under it by its own height.
      *
      * Same answer the site gives — its title is a link to `/post-703863-1` — rather than a control of
      * our own, so a reader who knows the web knows this one.
@@ -1083,12 +1078,11 @@ private fun ThreadList(
          * Present whether or not the thread has arrived — which is the whole reason this is one item
          * and not an `item` guarded by `state.body != null`.
          *
-         * The title, the avatar and the author's name inside it are shared elements, still settling
-         * out of their flight from a feed row while the thread is on its way. A guard here would
-         * dispose them the instant the body landed and compose fresh ones in a new subtree; the
-         * shared-element machinery reads that as a *second* transition and flies them again, from
-         * wherever the new node happened to be measured first. Same call site, changing arguments,
-         * and nothing moves. See [ThreadOpeningPost].
+         * The title, the avatar and the author's name are drawn from what the list already knew
+         * while the thread is on its way. A guard here would dispose them the instant the body
+         * landed and compose fresh ones in a new subtree — a re-measure, and with the scroll
+         * anchored on the title, a visible twitch. Same call site, changing arguments, and nothing
+         * moves. See [ThreadOpeningPost].
          *
          * The title used to be an item of its own above this one. It moved inside when the opening
          * post became a card, because a card cannot be split across two items without a seam where
@@ -1299,12 +1293,11 @@ private fun ThreadHeader(
             ) {
                 // The slug comes from the preview even once the body has arrived: the thread page's
                 // own markup carries the board's name but not its slug, and the tag colours read the
-                // slug first. Without it a tag would change colour under the reader the moment the
-                // network answered — and it is the same tag, still in flight from the row.
+                // slug first. Without it the same tag would change colour under the reader the
+                // moment the network answered.
                 BoardTag(
                     title = category,
                     slug = preview?.categorySlug,
-                    modifier = Modifier.sharedThreadBoard(postId),
                 )
                 // A labelled tag rather than the list's bare diamond: here there is room to name the thing.
                 if (isAwarded) {
@@ -1322,12 +1315,9 @@ private fun ThreadHeader(
             text = title,
             style = PostTitle.hangLeadingPunctuation(title),
             color = MaterialTheme.colorScheme.onSurface,
-            // Where the row's title lands. This header is also what the skeleton draws while the
-            // thread loads, so the landing place exists from the first frame of the flight rather
-            // than appearing once the network answers.
-            modifier = Modifier
-                .sharedThreadTitle(postId)
-                .onPlaced(onTitlePlaced),
+            // This header is also what the skeleton draws while the thread loads, so the title is
+            // measured from the first frame rather than once the network answers.
+            modifier = Modifier.onPlaced(onTitlePlaced),
         )
         if (onOpenOriginalPost != null) {
             // The title alone carries no affordance on a phone — no hover, no underline, nothing to
@@ -1357,10 +1347,9 @@ private fun ThreadHeader(
  * Who wrote a thread, at the size the opening post states it.
  *
  * Extracted because the loading state draws it too, from what the list already knew, and the two
- * have to agree to the pixel: the avatar and the name are mid-flight from a feed row when the
- * loading state is on screen, and they land again — without moving — when the thread replaces it.
- * Two hand-matched copies of this geometry would drift, and the drift would show as a twitch at the
- * exact moment the reader is watching.
+ * have to agree to the pixel: it is the same header before and after the thread arrives, and a
+ * hand-matched second copy of this geometry would drift. The drift would show as a twitch at the
+ * exact moment the reader is watching — the frame the body lands on.
  */
 @Composable
 private fun ThreadAuthorRow(
@@ -1373,8 +1362,8 @@ private fun ThreadAuthorRow(
 ) {
     Row(
         // Top, not centred: the avatar is shorter than the name and time beside it, and centring it
-        // would tie where it lands to how tall that text measures — which changes the moment badges
-        // arrive with the thread, under an avatar still settling out of its flight.
+        // would tie its position to how tall that text measures — which changes the moment badges
+        // arrive with the thread, shifting the avatar as the header settles.
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
         modifier = modifier,
@@ -1383,7 +1372,7 @@ private fun ThreadAuthorRow(
             url = avatarUrl,
             name = authorName,
             size = Sizes.avatarOriginalPost,
-            modifier = Modifier.sharedThreadAvatar(postId),
+            modifier = Modifier,
         )
         Column(Modifier.weight(1f)) {
             Row(
@@ -1395,9 +1384,7 @@ private fun ThreadAuthorRow(
                     style = floorNameStyle(),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .sharedThreadAuthor(postId),
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 badges()
             }
@@ -1411,12 +1398,10 @@ private fun ThreadAuthorRow(
  * thread arrives, the part of it the list that opened this thread already knew.
  *
  * A null [body] is the thread still loading, and this draws it rather than handing the screen over
- * to a separate skeleton, because the title, the avatar and the author's name here are shared
- * elements landing out of a flight from a feed row. Two composables would mean two sets of nodes,
- * and swapping one for the other the moment the body arrived would look to the shared-element
- * machinery like a fresh transition — it would fly them a second time, from wherever the replacement
- * was first measured. One call site whose arguments change is the whole fix: nothing is disposed, so
- * nothing moves.
+ * to a separate skeleton, because the title, the avatar and the author's name are the same header
+ * either way. Two composables would mean two sets of nodes, and swapping one for the other the
+ * moment the body arrived would re-measure all three and re-anchor the scroll under the reader. One
+ * call site whose arguments change is the whole fix: nothing is disposed, so nothing moves.
  */
 @Composable
 private fun ThreadOpeningPost(
@@ -2662,8 +2647,7 @@ private fun PostDetailUiState.firstIndexOfPage(page: Int): Int? {
  *
  * The height matters and the bar's own does not: the author's name is centred against this column,
  * so a placeholder even a dp off centres the name a dp high and drops it into place the moment the
- * thread arrives — one visible step, in an element the reader has just watched fly across the
- * screen.
+ * thread arrives — one visible step, in the header the reader is already looking at.
  *
  * The height comes from the style the real line is drawn in, so it follows the reading-size
  * preference along with the text it stands in for. A single-line [MetaText] is exactly its style's

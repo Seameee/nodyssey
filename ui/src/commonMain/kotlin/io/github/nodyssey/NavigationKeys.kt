@@ -183,9 +183,10 @@ data class PostDetailKey(
  *
  * - The thread states these before the network answers, instead of four grey bars standing in for
  *   facts the app was already holding.
- * - They are what the row's own title, avatar, name and board tag fly into. A shared element needs
- *   something at the far end on the *first* frame of the flight, and on that frame the thread has
- *   nothing of its own; see [io.github.nodyssey.ui.common.LocalThreadTransition].
+ * - They let the thread draw its header on the frame it opens, rather than a skeleton over facts the
+ *   app already had. (They also used to be what the row's own title, avatar, name and board tag flew
+ *   into; that shared-element flight is gone — see `Navigation.kt` — and what is left is the plainer
+ *   reason, which was always the stronger one.)
  *
  * Deliberately not the whole [io.github.nodyssey.model.PostSummary]: this goes in a navigation key,
  * which is serialized into saved state and survives process death, so it holds what the thread will
@@ -201,12 +202,11 @@ data class ThreadPreview(
     val categorySlug: String? = null,
     /**
      * Carried although the thread draws it differently from the row — a labelled 推荐阅读 tag rather
-     * than the row's diamond, so the two never travel into one another.
+     * than the row's diamond, so the header does not restate it in the row's vocabulary.
      *
      * It is here for a duller reason: the tag sits in the same wrapping row as the board tag, and a
      * loading state that did not know about it would size that row for two items and then find
-     * three. Everything below — the avatar and the author's name, still settling out of their
-     * flight — would step down as it re-wrapped.
+     * three. Everything below — the avatar and the author's name — would step down as it re-wrapped.
      */
     val isAwarded: Boolean = false,
 )

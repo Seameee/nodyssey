@@ -147,21 +147,23 @@ class PostDetailScreenTest {
     private val travellers = listOf("a thread title", "技术", "op", "O")
 
     /**
-     * The thread arriving must not replace the nodes the shared elements are landing on.
+     * The thread arriving must not replace the header nodes the preview had already drawn.
      *
      * This is the whole cause of a bug worth naming, because the symptom pointed elsewhere: with the
-     * loading state and the thread in two different subtrees, the four travelling things were
-     * disposed and re-composed the moment the fetch answered. Nothing about that is visible as a
-     * "rebuild" — what the reader saw was the avatar arriving, settling, and then flying a second
-     * time, sometimes up from below, because the shared-element machinery reads a new node under an
-     * old key as a fresh transition and animates it from wherever it was first measured.
+     * loading state and the thread in two different subtrees, the four preview-drawn things were
+     * disposed and re-composed the moment the fetch answered. The reader saw the avatar arrive,
+     * settle, and then jump a second time, because a new node under an old key was measured afresh.
+     *
+     * The shared-element flight that used to make this visible is gone — see `Navigation.kt` — but
+     * the property is not about that flight: re-composing the header on arrival still throws away
+     * the scroll anchor and re-measures the title, so the test stays.
      *
      * Semantics ids are the cheapest way to state "same node". They change when a node is composed
      * again; they survive a modifier being added, which is what happens here when the author row
      * becomes clickable.
      */
     @Test
-    fun `the thread arriving does not replace the nodes that flew in`() {
+    fun `the thread arriving does not replace the nodes the preview drew`() {
         val state = setThreadArriving()
         val before = travellers.associateWith { nodeWithText(it).fetchSemanticsNode().id }
 

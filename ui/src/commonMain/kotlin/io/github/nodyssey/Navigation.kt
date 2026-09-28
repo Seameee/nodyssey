@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -54,7 +53,6 @@ import io.github.nodyssey.core.NodeSeekSite
 import io.github.nodyssey.data.NotificationTab
 import io.github.nodyssey.di.AppContainer
 import io.github.nodyssey.ui.common.LocalOpenNetworkCheck
-import io.github.nodyssey.ui.common.LocalThreadTransition
 import io.github.nodyssey.ui.common.SwipeBackDirection
 import io.github.nodyssey.ui.common.appName
 import io.github.nodyssey.ui.common.rememberTouchExplorationEnabled
@@ -569,23 +567,28 @@ fun MainNavigation(
         ),
         state = navigationSuiteState,
     ) {
-        SharedTransitionLayout(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
             /*
-             * Withheld on a two-pane window, where a row and the thread it opens are on screen at
-             * once and a single shared-element key would have two live claims on it. Provided as a
-             * composition local rather than threaded through every screen: the two ends of the
-             * flight are a feed row and a thread header, twelve composables apart, and the only
-             * thing they need to agree on is that the flight is happening at all.
+             * No `SharedTransitionLayout` here any more, and the thread's title no longer flies from
+             * a row into the header.
              *
-             * Withheld on electronic paper for a different reason: a title flying from a row into a
-             * header is a per-frame redraw of two moving areas, which is the most expensive shape a
-             * transition can have on a panel and the one that ghosts worst.
+             * It was a deliberate effect — four things a row and a thread state about the same post,
+             * travelling between the two layouts — and it is gone because it cannot coexist with the
+             * back gesture. A shared element animates on the way *out* as well as in: swiping back
+             * made the title fly towards the row while the pages slid underneath it, two motions
+             * describing one event, and the flight won the eye. There is no per-direction switch on
+             * `sharedBounds` to keep the flight on the way in and drop it on the way out, and the
+             * composition local it read cannot be withdrawn mid-transition without cutting the
+             * animation off, so the choice was the flight or the gesture.
+             *
+             * The gesture is the platform's own behaviour and the flight was an invention, so the
+             * flight went. What replaces it is `NavDisplay`'s default on iOS — the native push and
+             * pull, for opening a thread and for leaving it — which is also what makes the swipe
+             * track the finger. See `swipeBackToNavigate`.
              */
             val eink = LocalEinkMode.current
             val openNetworkCheck = remember(backStack) { { backStack.add(NetworkCheckKey) } }
             CompositionLocalProvider(
-                LocalThreadTransition provides
-                    this@SharedTransitionLayout.takeUnless { isListDetailExpanded || eink },
                 // 网络自检 from any screen's network-error state — see [LocalOpenNetworkCheck].
                 LocalOpenNetworkCheck provides { openNetworkCheck() },
             ) {
@@ -608,7 +611,6 @@ fun MainNavigation(
                         }
                     },
                     sceneStrategies = listOf(listDetailSceneStrategy),
-                    sharedTransitionScope = this@SharedTransitionLayout,
                     // Nav3's own defaults are a 700ms slide built from `tween` and `spring`, written
                     // out rather than taken from the motion scheme — so `PlazaTheme`'s snapped scheme,
                     // which silences everything else, does not reach them. On paper a slide is the

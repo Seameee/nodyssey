@@ -34,8 +34,8 @@ internal fun EntryProviderScope<NavKey>.tabRootEntries(nav: StackEntryScope) = w
             viewModel = viewModel,
             feedStates = homeFeedStates,
             // The whole of what the row is already showing, not just the id: the thread
-            // draws these four before the network answers, and they are what the row's own
-            // title, avatar, name and board tag fly into.
+            // draws these four on the frame it opens, rather than a skeleton over facts the
+            // app was already holding.
             onPostClick = { post ->
                 backStack.add(
                     PostDetailKey(

@@ -94,7 +94,6 @@ import io.github.nodyssey.ui.common.CollapsingHeader
 import io.github.nodyssey.ui.common.EmptyFeedState
 import io.github.nodyssey.ui.common.FeedSortOrder
 import io.github.nodyssey.ui.common.JumpDestination
-import io.github.nodyssey.ui.common.LocalThreadTransition
 import io.github.nodyssey.ui.common.NavigationBarScrollConnection
 import io.github.nodyssey.ui.common.NavigationDirectionThreshold
 import io.github.nodyssey.ui.common.PageJumpRail
@@ -106,10 +105,6 @@ import io.github.nodyssey.ui.common.SiteErrorState
 import io.github.nodyssey.ui.common.SortMenuItem
 import io.github.nodyssey.ui.common.compactCount
 import io.github.nodyssey.ui.common.postCardTitleStyle
-import io.github.nodyssey.ui.common.sharedThreadAuthor
-import io.github.nodyssey.ui.common.sharedThreadAvatar
-import io.github.nodyssey.ui.common.sharedThreadBoard
-import io.github.nodyssey.ui.common.sharedThreadTitle
 import io.github.nodyssey.ui.common.shortMessage
 import io.github.nodyssey.ui.common.siteErrorRecovery
 import io.github.nodyssey.ui.common.snackbarDuration
@@ -782,7 +777,6 @@ private fun BoardFeed(
                                     PostRow(
                                         post = post,
                                         onClick = { onPostClick(post) },
-                                        sharedWithThread = true,
                                     )
                             }
                         }
@@ -1218,16 +1212,6 @@ internal fun PostRow(
      * own title already says what the whole list is.
      */
     showAwardBadge: Boolean = true,
-    /**
-     * Whether this row's title, avatar, author and board tag are the same objects as the thread's,
-     * and should travel there rather than cut — see [LocalThreadTransition].
-     *
-     * On for 首页 alone, which is the only list that hands the thread everything it would need to
-     * draw them. A row that flew its contents into a thread arriving by the ordinary slide would
-     * look worse than one that did not fly at all, and two lists claiming one post at the same
-     * moment is a state the shared-element machinery has no answer for.
-     */
-    sharedWithThread: Boolean = false,
 ) {
     val summary = post.summary
     if (summary.isPinned) {
@@ -1248,7 +1232,7 @@ internal fun PostRow(
                 url = summary.avatarUrl,
                 name = summary.authorName,
                 size = CardAvatarSize,
-                modifier = Modifier.thenIf(sharedWithThread) { Modifier.sharedThreadAvatar(summary.postId) },
+                modifier = Modifier,
             )
             // Its own row taking all the room the badges leave, so a long name gives way before the
             // board tag does and the badges stay against the end.
@@ -1263,14 +1247,12 @@ internal fun PostRow(
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .thenIf(sharedWithThread) { Modifier.sharedThreadAuthor(summary.postId) },
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 BoardTag(
                     title = summary.categoryTitle,
                     slug = summary.categorySlug,
-                    modifier = Modifier.thenIf(sharedWithThread) { Modifier.sharedThreadBoard(summary.postId) },
+                    modifier = Modifier,
                 )
             }
             PostBadges(summary, showAward = showAwardBadge)
@@ -1282,7 +1264,7 @@ internal fun PostRow(
             fontWeight = FontWeight.SemiBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.thenIf(sharedWithThread) { Modifier.sharedThreadTitle(summary.postId) },
+            modifier = Modifier,
         )
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -1379,19 +1361,6 @@ private fun PinnedRow(
 
 /** 20dp: the avatar at the head of a feed card, on the one line it shares with the name and the board. */
 private val CardAvatarSize = 20.dp
-
-/**
- * Applies [modifier] only when [condition] holds.
- *
- * A helper because the four shared-element modifiers below are all conditional on the same flag, and
- * spelling out `if (flag) Modifier.x() else Modifier` four times buried the row's layout under the
- * animation's bookkeeping. Composable-aware, which is why it is a lambda and not a value.
- */
-@Composable
-private inline fun Modifier.thenIf(
-    condition: Boolean,
-    modifier: @Composable () -> Modifier,
-): Modifier = if (condition) then(modifier()) else this
 
 /**
  * First-load placeholder, laid out row for row like the real list.

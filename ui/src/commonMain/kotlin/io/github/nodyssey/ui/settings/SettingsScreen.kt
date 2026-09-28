@@ -65,8 +65,7 @@ import io.github.nodyssey.ui.resources.settings_appearance
 import io.github.nodyssey.ui.resources.settings_back_swipe
 import io.github.nodyssey.ui.resources.settings_back_swipe_both
 import io.github.nodyssey.ui.resources.settings_back_swipe_hint
-import io.github.nodyssey.ui.resources.settings_back_swipe_hint_restart
-import io.github.nodyssey.ui.resources.settings_back_swipe_start
+import io.github.nodyssey.ui.resources.settings_back_swipe_right
 import io.github.nodyssey.ui.resources.settings_body_size
 import io.github.nodyssey.ui.resources.settings_clear_cache
 import io.github.nodyssey.ui.resources.settings_clear_cache_size
@@ -323,14 +322,7 @@ fun SettingsScreen(
                 if (backSwipeAvailable == true) {
                     SettingsBlock(
                         title = stringResource(Res.string.settings_back_swipe),
-                        subtitle =
-                        stringResource(
-                            if (backSwipeGestureAppliesOnRestart) {
-                                Res.string.settings_back_swipe_hint_restart
-                            } else {
-                                Res.string.settings_back_swipe_hint
-                            },
-                        ),
+                        subtitle = stringResource(Res.string.settings_back_swipe_hint),
                     ) {
                         ConnectedBackSwipeButtons(
                             selected = state.settings.backSwipeEdge,
@@ -739,8 +731,9 @@ private fun ConnectedReportFormatButtons(
 }
 
 /**
- * 返回手势 — two segments rather than a switch per edge, because a reader who wants the far edge
- * wants it *as well as* the near one, and the near one is not theirs to refuse. See [BackSwipeEdge].
+ * 返回手势 — two segments rather than a switch per direction, because a reader who wants the leftward
+ * swipe wants it *as well as* the rightward one, and the platform's own rightward gesture is not
+ * theirs to refuse. See [BackSwipeEdge].
  */
 @Composable
 private fun ConnectedBackSwipeButtons(
@@ -749,7 +742,7 @@ private fun ConnectedBackSwipeButtons(
 ) {
     val choices =
         listOf(
-            BackSwipeEdge.START to stringResource(Res.string.settings_back_swipe_start),
+            BackSwipeEdge.RIGHT to stringResource(Res.string.settings_back_swipe_right),
             BackSwipeEdge.BOTH to stringResource(Res.string.settings_back_swipe_both),
         )
     ChoiceSegments(

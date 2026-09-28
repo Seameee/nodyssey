@@ -16,11 +16,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.nodyssey.data.settings.BackSwipeEdge
 import io.github.nodyssey.data.settings.ColorSource
 import io.github.nodyssey.data.settings.ThemeMode
 import io.github.nodyssey.data.settings.UserSettings
 import io.github.nodyssey.di.AppContainer
 import io.github.nodyssey.ui.common.LocalAppName
+import io.github.nodyssey.ui.common.SwipeBackDirection
 import io.github.nodyssey.ui.common.SystemBarsMatchTheme
 import io.github.nodyssey.ui.common.rememberBrowserLinks
 import io.github.nodyssey.ui.common.rememberReducedMotionEnabled
@@ -31,6 +33,7 @@ import io.github.nodyssey.ui.settings.ApplyAppLanguage
 import io.github.nodyssey.ui.settings.ProvideAppLanguage
 import io.github.nodyssey.ui.settings.rememberAppLinkHandlingEnabled
 import io.github.nodyssey.ui.settings.rememberAppLinkSettingsLauncher
+import io.github.nodyssey.ui.settings.rememberBackSwipeGestureAvailable
 import io.github.nodyssey.ui.settings.theme.activeCharacterPalette
 import io.github.nodyssey.ui.settings.theme.rememberActiveSeed
 import io.github.nodyssey.ui.settings.theme.toPlaza
@@ -185,6 +188,24 @@ fun NodysseyRoot(
                             initialTab = initialTab,
                             launchRequest = launchRequest,
                             onLaunchRequestHandled = onLaunchRequestHandled,
+                            /*
+                             * 返回手势, answered as the platform question it is.
+                             *
+                             * `rememberBackSwipeGestureAvailable` is null off iOS — Android's back
+                             * gesture belongs to the launcher and the desktop window has none — and
+                             * null becomes `NONE`, which attaches no gesture at all. On iOS the
+                             * stored direction decides, and the gesture is the app's own, so a change
+                             * here takes effect at once rather than at the next launch.
+                             */
+                            swipeBackDirection =
+                            if (rememberBackSwipeGestureAvailable() == true) {
+                                when (settings.backSwipeEdge) {
+                                    BackSwipeEdge.RIGHT -> SwipeBackDirection.RIGHT
+                                    BackSwipeEdge.BOTH -> SwipeBackDirection.BOTH
+                                }
+                            } else {
+                                SwipeBackDirection.NONE
+                            },
                         )
                         /*
                          * 新手引导, over the app rather than instead of it.

@@ -55,8 +55,10 @@ import io.github.nodyssey.data.NotificationTab
 import io.github.nodyssey.di.AppContainer
 import io.github.nodyssey.ui.common.LocalOpenNetworkCheck
 import io.github.nodyssey.ui.common.LocalThreadTransition
+import io.github.nodyssey.ui.common.SwipeBackDirection
 import io.github.nodyssey.ui.common.appName
 import io.github.nodyssey.ui.common.rememberTouchExplorationEnabled
+import io.github.nodyssey.ui.common.swipeBackToNavigate
 import io.github.nodyssey.ui.login.WebViewGoal
 import io.github.nodyssey.ui.navigation.NodysseyNavigationItems
 import io.github.nodyssey.ui.navigation.TopLevelDestination
@@ -87,6 +89,14 @@ fun MainNavigation(
     initialTab: TopLevelDestination = TopLevelDestination.HOME,
     launchRequest: LaunchRequest? = null,
     onLaunchRequestHandled: () -> Unit = {},
+    /**
+     * 返回手势 — which horizontal swipes navigate back, in the lower half of the screen.
+     *
+     * Read here rather than inside the gesture so that the platform question ("does this platform
+     * have such a gesture at all?") is answered where the setting is, and this module only has to
+     * place a modifier. `SwipeBackDirection.NONE` on every platform that is not iOS.
+     */
+    swipeBackDirection: SwipeBackDirection = SwipeBackDirection.NONE,
 ) {
     val signInUrl = NodeSeekSite.BASE_URL + NodeSeekSite.SIGN_IN_PATH
 
@@ -581,6 +591,11 @@ fun MainNavigation(
             ) {
                 NavDisplay(
                     entries = entries,
+                    // 返回手势 rides the navigation container rather than a strip drawn over it, so
+                    // that it sits below every screen in hit-test order and can only ever take a
+                    // sideways drag no screen claimed — a scroller or the home pager always wins one
+                    // it wants. See `swipeBackToNavigate`.
+                    modifier = Modifier.swipeBackToNavigate(swipeBackDirection),
                     // The current tab first, and only when it is spent does back mean "leave this
                     // tab". `NavDisplay` handles back whenever there is more than one entry, and
                     // with 首页 underneath there always is — so popping blindly would empty a

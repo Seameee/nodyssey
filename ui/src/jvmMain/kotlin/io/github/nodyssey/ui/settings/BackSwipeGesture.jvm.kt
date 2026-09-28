@@ -8,6 +8,3 @@ import androidx.compose.runtime.Composable
  */
 @Composable
 actual fun rememberBackSwipeGestureAvailable(): Boolean? = null
-
-/** Unread where there is no row; false is the answer that keeps a caller from drawing the hint. */
-actual val backSwipeGestureAppliesOnRestart: Boolean = false

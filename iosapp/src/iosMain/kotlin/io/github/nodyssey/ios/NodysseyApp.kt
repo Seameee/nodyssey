@@ -1,14 +1,11 @@
 package io.github.nodyssey.ios
 
-import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.uikit.EndEdgePanGestureBehavior
 import androidx.compose.ui.window.ComposeUIViewController
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import io.github.nodyssey.NodysseyRoot
 import io.github.nodyssey.core.NodeSeekSite
-import io.github.nodyssey.data.settings.BackSwipeEdge
 import io.github.nodyssey.ui.navigation.TopLevelDestination
 import io.github.nodyssey.ui.settings.IosActiveSite
 import io.github.plaza.core.net.resolveWebKitUserAgent
@@ -133,10 +130,6 @@ object NodysseyApp {
         return graph
     }
 
-    // `endEdgePanGestureBehavior` is `@ExperimentalComposeUiApi`: CMP still reserves the right to
-    // reshape how the far edge is configured. Opted in here rather than at the file level, because
-    // this is the one function that needs it.
-    @OptIn(ExperimentalComposeUiApi::class)
     private suspend fun buildController(): UIViewController {
         val graph = ensureContainer()
         // Before the composition rather than inside it: the store is read asynchronously, and a
@@ -147,18 +140,22 @@ object NodysseyApp {
         val storedSettings = graph.settingsRepository.settings.first()
         val controller =
             ComposeUIViewController(
-                // 返回手势, and the only place it can be said. `IosComposeSceneLayer` reads this once,
-                // in its initialiser, and installs both edge recognizers from it; there is no setter
-                // and no second reading, which is why the settings row promises the next launch. The
-                // builder's `configure` lambda runs before the scene layer exists, so this is the last
-                // moment the answer can be given at all.
-                configure = {
-                    endEdgePanGestureBehavior =
-                        when (storedSettings.backSwipeEdge) {
-                            BackSwipeEdge.START -> EndEdgePanGestureBehavior.Disabled
-                            BackSwipeEdge.BOTH -> EndEdgePanGestureBehavior.Back
-                        }
-                },
+                /*
+                 * The far edge stays `Disabled`, and this is deliberate rather than an oversight.
+                 *
+                 * 返回手势 used to be answered here, by switching `endEdgePanGestureBehavior` between
+                 * `Disabled` and `Back`. That is no longer the gesture: an edge recognizer can only
+                 * start inside the system's edge zone — the outer ~20pt — and what was wanted was a
+                 * swipe a thumb can make in the middle of the screen. The gesture is now the app's
+                 * own drag, installed by `swipeBackToNavigate` on the navigation container, and it
+                 * feeds Nav3's predictive back through `DirectNavigationEventInput` exactly as the
+                 * platform input would have.
+                 *
+                 * Turning the far edge back on here would put a second recognizer on the same edge
+                 * doing the same thing, which is a double navigation rather than a spare. The near
+                 * edge is Compose's and cannot be turned off; it keeps working, which is why the
+                 * settings row offers "仅向右滑" as the narrow choice rather than "neither".
+                 */
             ) {
                 NodysseyRoot(
                     container = graph,

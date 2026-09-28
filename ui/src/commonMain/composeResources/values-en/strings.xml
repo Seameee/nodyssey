@@ -368,10 +368,9 @@
     <string name="settings_report_format_adapted">Laid out</string>
     <string name="settings_report_format_source">As posted</string>
     <string name="settings_back_swipe">Back gesture</string>
-    <string name="settings_back_swipe_hint">Swipe in from a screen edge to go back</string>
-    <string name="settings_back_swipe_hint_restart">Swipe in from a screen edge to go back; applies after you reopen the app</string>
-    <string name="settings_back_swipe_start">Left edge only</string>
-    <string name="settings_back_swipe_both">Either edge</string>
+    <string name="settings_back_swipe_hint">Swipe left or right in the lower half of the screen to go back</string>
+    <string name="settings_back_swipe_right">Swipe right only</string>
+    <string name="settings_back_swipe_both">Either direction</string>
     <string name="settings_home_page_bar">Page bar on home</string>
     <string name="settings_home_page_bar_hint">Shows the page number at the bottom right of home</string>
     <string name="settings_wifi_images">Load images on Wi-Fi only</string>

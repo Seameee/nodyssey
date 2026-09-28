@@ -85,9 +85,7 @@ class SettingsRepository(
                     ?.let { runCatching { FeedSort.valueOf(it) }.getOrNull() }
                     ?: FeedSort.LAST_REPLY,
                 homePageBar = preferences[KEY_HOME_PAGE_BAR] ?: true,
-                backSwipeEdge = preferences[KEY_BACK_SWIPE_EDGE]
-                    ?.let { runCatching { BackSwipeEdge.valueOf(it) }.getOrNull() }
-                    ?: BackSwipeEdge.START,
+                backSwipeEdge = decodeBackSwipeEdge(preferences[KEY_BACK_SWIPE_EDGE]),
                 holidayTheme = preferences[KEY_HOLIDAY_THEME] ?: false,
                 searchHistory = decodeSearchHistory(preferences),
                 recentBoards = decodeValues(preferences[KEY_RECENT_BOARDS]),
@@ -812,22 +810,27 @@ data class UserSettings(
      */
     val homePageBar: Boolean = true,
     /**
-     * 返回手势 — which screen edges an edge-swipe starts a back navigation from.
+     * 返回手势 — which horizontal swipes navigate back, in the lower half of the screen.
      *
      * iOS only, and the one setting here whose Android half does nothing: Android's back gesture is
-     * the system's (`OnBackInvokedCallback`), it is drawn by the launcher, and no app can add a second
-     * edge to it. So the row that writes this is hidden on Android — see `rememberBackSwipeGestureAvailable`
-     * in `:ui`, which is the platform question the row is gated on rather than a branch in a screen.
+     * the system's (`OnBackInvokedCallback`), it is drawn by the launcher, and no app can add a
+     * gesture to it. So the row that writes this is hidden on Android — see
+     * `rememberBackSwipeGestureAvailable` in `:ui`, which is the platform question the row is gated
+     * on rather than a branch in a screen.
      *
-     * [BackSwipeEdge.START] is the default because it is what every iOS app does and what the
-     * platform's own `UINavigationController` does.
+     * **[BackSwipeEdge.BOTH] is the default.** It is the point of the setting existing: the first
+     * build of this feature shipped the narrow value as its default and required the reader to find
+     * the row, change it and relaunch, and the first person to install it did what anyone would
+     * instead — swiped from the middle of the screen and concluded the feature did not work. A
+     * default that has to be discovered before the feature is present is the feature being absent.
+     * Both directions work out of the box; the row is there to *narrow* that for anyone who wants
+     * the platform's own single direction back.
      *
-     * **Read once, at shell construction.** The gesture recognizers behind this are installed by
-     * Compose Multiplatform's own `ComposeUIViewController`, which reads it while the controller is
-     * built and cannot be told again afterwards — the same shape, and the same cost, as 语言 on this
-     * platform. The settings row says so rather than appearing to do nothing.
+     * **Applied to the next swipe, not the next launch.** The gesture is the app's own drag on the
+     * navigation container, not Compose Multiplatform's edge recognizers, so nothing here is read
+     * once at shell construction and no restart is promised. See `swipeBackToNavigate`.
      */
-    val backSwipeEdge: BackSwipeEdge = BackSwipeEdge.START,
+    val backSwipeEdge: BackSwipeEdge = BackSwipeEdge.BOTH,
     /** Local mirror of the account's Remote 启用节日主题 switch. */
     val holidayTheme: Boolean = false,
     val searchHistory: List<SearchHistoryEntry> = emptyList(),
@@ -963,25 +966,56 @@ data class SavedTheme(
 enum class ReportFormat { ADAPTED, SOURCE }
 
 /**
- * 返回手势 — which edges of the screen an edge-swipe navigates back from.
+ * 返回手势 — which horizontal swipe directions navigate back.
  *
- * Two values rather than a switch per edge, because the pair is a choice rather than two independent
- * switches: an app that answered back on neither edge would have no gesture at all, and one that
- * answered on both is [BOTH]. The platform's own start edge is not something an app can refuse —
- * `UINavigationController`'s interactive pop is the same gesture — so there is no "neither" to offer.
+ * Two values rather than a switch per direction, because the pair is a choice rather than two
+ * independent switches: an app that answered in neither direction would have no gesture at all, and
+ * one that answered in both is [BOTH]. The platform's own left-edge gesture is not something an app
+ * can refuse — `UINavigationController`'s interactive pop is the same gesture — so there is no
+ * "neither" to offer, and [RIGHT] is the narrower end of the range rather than absence.
  *
- * The names are the ones on disk. Renaming a constant without a migration would land every existing
- * device back on [START], which is why they say which edge rather than which direction: what is the
- * left edge in a left-to-right language is the right edge in a right-to-left one, and only the
- * platform knows which of the two it is drawing — `:iosapp` is where this becomes an edge.
+ * The names are the ones on disk, and they used to be `START`/`BOTH`. `START` meant "the platform's
+ * own edge" — which is why the old names said *edge*: what is the left edge in a left-to-right
+ * language is the right edge in a right-to-left one, and only the platform knows which of the two it
+ * is drawing. That is no longer what this setting controls. The gesture is now the app's own, driven
+ * by a drag anywhere in the lower half of the screen rather than by the system's edge recognizer, so
+ * there is one direction to name and no layout direction to defer to.
+ *
+ * `START` is still *decoded* — see the reader — because a build that shipped the old gesture wrote it
+ * to disk, and a rename without that mapping would land those devices on the new default instead of
+ * the choice they made. Anything else unreadable falls back to [BOTH], the default.
  */
 enum class BackSwipeEdge {
-    /** The platform's own back edge, which is the left edge under LTR and the right under RTL. */
-    START,
+    /**
+     * Swiping right returns. The platform's own left-edge gesture keeps working beside it, so this
+     * is the narrower choice rather than a different one.
+     */
+    RIGHT,
 
-    /** Both edges return: [START] plus the far one, which the platform leaves disabled by default. */
+    /** Both directions return: [RIGHT] plus a swipe to the left. The default. */
     BOTH,
 }
+
+/**
+ * Reads 返回手势, mapping the name an older build wrote and defaulting an unreadable one.
+ *
+ * `START` is the whole reason this is a function rather than a `valueOf`: it was the name of the
+ * narrow choice when the gesture belonged to the platform's edge recognizer, and it means exactly
+ * what [BackSwipeEdge.RIGHT] means now — the same user, having picked the same thing. A build that
+ * shipped between those two spellings wrote it to disk, and dropping it here would silently move
+ * those devices to [BackSwipeEdge.BOTH] instead.
+ *
+ * The `runCatching` is the second job, and the one that matters more than the mapping: a name this
+ * build cannot read must not throw *inside the settings flow*, where it would cost the reader every
+ * screen that collects `settings` rather than the one preference. [BackSwipeEdge.BOTH] is the
+ * fallback because that is the default, and a store with no answer is a fresh install.
+ */
+private fun decodeBackSwipeEdge(raw: String?): BackSwipeEdge =
+    when (raw) {
+        null -> BackSwipeEdge.BOTH
+        "START" -> BackSwipeEdge.RIGHT
+        else -> runCatching { BackSwipeEdge.valueOf(raw) }.getOrDefault(BackSwipeEdge.BOTH)
+    }
 
 /**
  * The stored field stays a list even though the domain now holds one board.

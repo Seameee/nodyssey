@@ -362,10 +362,9 @@
     <string name="settings_report_format_adapted">適配格式</string>
     <string name="settings_report_format_source">顯示原文</string>
     <string name="settings_back_swipe">返回手勢</string>
-    <string name="settings_back_swipe_hint">從螢幕邊緣滑回上一頁</string>
-    <string name="settings_back_swipe_hint_restart">從螢幕邊緣滑回上一頁，重新開啟 App 後生效</string>
-    <string name="settings_back_swipe_start">僅左側</string>
-    <string name="settings_back_swipe_both">左右兩側</string>
+    <string name="settings_back_swipe_hint">在螢幕下半部左右滑動，返回上一頁</string>
+    <string name="settings_back_swipe_right">僅向右滑</string>
+    <string name="settings_back_swipe_both">左右都能滑</string>
     <string name="settings_home_page_bar">首頁翻頁列</string>
     <string name="settings_home_page_bar_hint">在首頁右下角顯示頁碼</string>
     <string name="settings_wifi_images">僅 Wi-Fi 下載入圖片</string>

@@ -163,12 +163,14 @@ class SettingsViewModel(
     }
 
     /**
-     * 返回手势 — written like any other setting, and read at the next launch by `:iosapp`.
+     * 返回手势 — written like any other setting, and applied to the very next swipe.
      *
-     * Nothing here re-creates the controller or otherwise chases the change: the recognizers behind
-     * it are installed once, when Compose Multiplatform's `ComposeUIViewController` is constructed,
-     * and the settings row says so. Rebuilding the controller to apply it would put the reader back
-     * on the feed. See `backSwipeGestureAppliesOnRestart`.
+     * No restart is needed and none is promised. The gesture is the app's own drag, installed by
+     * `swipeBackToNavigate` on the navigation container, and it reads the stored direction through
+     * `rememberUpdatedState` at the moment a finger commits rather than when the shell is built. That
+     * is the difference from the platform edge recognizers this replaced: those were configured once
+     * from `endEdgePanGestureBehavior`, so a change could only land at the next launch, and
+     * rebuilding the controller to force it would have put the reader back on the feed.
      */
     fun setBackSwipeEdge(value: BackSwipeEdge) {
         viewModelScope.launch { settings.setBackSwipeEdge(value) }

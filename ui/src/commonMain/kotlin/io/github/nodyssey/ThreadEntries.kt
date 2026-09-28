@@ -65,15 +65,23 @@ internal fun EntryProviderScope<NavKey>.threadEntries(nav: StackEntryScope) = wi
 
     entry<PostDetailKey>(
         /*
-         * Fades rather than the default slide — but only for a thread opened from a row that
-         * handed over its title.
+         * Fades in rather than sliding — but only for a thread opened from a row that handed over its
+         * title.
          *
-         * A slide and a shared element contradict each other: the title would detach from
-         * the page it belongs to and fly across a screen that is itself travelling sideways.
-         * Fading the two pages leaves the title as the only thing moving, which is the whole
-         * point of moving it. Where no row supplied a title there is nothing to fly — a
-         * notification, a deep link, the composer — and those keep the slide, which is still
-         * the honest description of what happened: a page arrived from somewhere else.
+         * A slide and a shared element contradict each other: the title would detach from the page it
+         * belongs to and fly across a screen that is itself travelling sideways. Fading the two pages
+         * leaves the title as the only thing moving, which is the whole point of moving it. Where no
+         * row supplied a title there is nothing to fly — a notification, a deep link, the composer —
+         * and those keep the slide, which is still the honest description of what happened: a page
+         * arrived from somewhere else.
+         *
+         * **Only the open half is overridden.** The pop and predictive-pop specs are deliberately left
+         * unset so they fall back to `NavDisplay`'s own, which on iOS is the platform's push-and-pull
+         * bezier — the animation a reader expects when a page goes back. Overriding them with the same
+         * fade is what made going back look wrong: a fade in is a reasonable way to *arrive* at a page
+         * whose title flew in, but a fade *out* is not how iOS leaves one, and it was applied to the
+         * gesture as well, so the page never tracked the finger. See `NavDisplay`'s `contentTransform`,
+         * where each spec falls back on its own — naming the open one does not drag the others with it.
          */
         metadata = { key ->
             if (key.preview == null) emptyMap() else threadOpenTransition(nav)
@@ -180,13 +188,25 @@ internal fun EntryProviderScope<NavKey>.threadEntries(nav: StackEntryScope) = wi
 
 /**
  * What a thread opened from a list row animates as. See the `entry<PostDetailKey>` metadata for why
- * this is not the default slide, and [io.github.nodyssey.ui.common.sharedThreadTitle] for the thing
- * the fade is clearing the way for.
+ * the *open* is not the default slide, for why the pop specs are left alone, and
+ * [io.github.nodyssey.ui.common.sharedThreadTitle] for the thing the fade is clearing the way for.
+ *
+ * The predictive-pop spec is named explicitly as the fade **only** where the panel is electronic
+ * paper; on every other platform it is deliberately absent so `NavDisplay`'s own predictive spec —
+ * the native push-and-pull on iOS — answers instead. Naming it here was the bug: a predictive
+ * transition is the one the finger drives, and a fade cannot be driven by a finger.
  */
-private fun threadOpenTransition(nav: StackEntryScope) =
-    NavDisplay.transitionSpec { nav.fadeOrCut() } +
-        NavDisplay.popTransitionSpec { nav.fadeOrCut() } +
-        NavDisplay.predictivePopTransitionSpec { _ -> nav.fadeOrCut() }
+private fun threadOpenTransition(nav: StackEntryScope): Map<String, Any> =
+    if (nav.isEinkMode()) {
+        NavDisplay.transitionSpec { nav.fadeOrCut() } +
+            NavDisplay.popTransitionSpec { nav.fadeOrCut() } +
+            NavDisplay.predictivePopTransitionSpec { _ -> nav.fadeOrCut() }
+    } else {
+        // Open fades; pop and predictive-pop fall through to `NavDisplay`'s defaults. The list is
+        // typed `Map<String, Any>` rather than inferred because the three `+` overloads that combine
+        // these metadata blocks return different map types.
+        NavDisplay.transitionSpec { nav.fadeOrCut() }
+    }
 
 /**
  * The fade, or nothing at all on electronic paper.
